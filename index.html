@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="description" content="Interactive 2D galaxy simulator: spiral, barred, lenticular and elliptical galaxies as self-gravitating fluids (Euler + Poisson), with and without a dark-matter halo." />
+    <title>Galaxy Simulator — continuum model, with &amp; without dark matter</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%8C%8C%3C/text%3E%3C/svg%3E" />
+  </head>
+  <body>
+    <canvas id="sim" aria-label="Galaxy simulation (face-on view)"></canvas>
+    <canvas id="overlay" aria-hidden="true"></canvas>
+
+    <div id="hud">
+      <span id="fps">-- fps</span>
+      <span id="stats"></span>
+    </div>
+    <div id="badge"><span id="time">t = 0 Myr</span><span id="dm-badge" class="on">dark matter ON</span></div>
+    <div id="legend"></div>
+
+    <section id="chart-box" aria-label="Rotation curve and Toomre Q">
+      <canvas id="chart"></canvas>
+    </section>
+
+    <div id="error" hidden></div>
+
+    <button id="panel-toggle" class="icon-btn" title="Toggle controls (H)" aria-expanded="true" aria-controls="panel">☰</button>
+
+    <aside id="panel">
+      <header>
+        <h1>Galaxy simulator</h1>
+        <p class="hint">Stars and gas as continuous, self-gravitating fluids · units: kpc, km/s, Myr, 10¹⁰ M☉</p>
+      </header>
+
+      <section class="buttons">
+        <button id="play" title="Pause / play (Space)">⏸ Pause</button>
+        <button id="step" title="Advance ~2 Myr (S)">⏭ Step</button>
+        <button id="reset" title="Restart from equilibrium with the current settings (R)">⟲ Reset</button>
+      </section>
+
+      <section>
+        <label class="row">Galaxy
+          <select id="preset"></select>
+        </label>
+        <p class="hint" id="preset-desc"></p>
+      </section>
+
+      <section>
+        <label class="row">View
+          <select id="view">
+            <option value="galaxy">Galaxy (stars + gas)</option>
+            <option value="stars">Stellar surface density</option>
+            <option value="gas">Gas surface density</option>
+            <option value="potential">Gravitational potential Φ</option>
+            <option value="vorticity">Vorticity perturbation</option>
+            <option value="darkmatter">Dark-matter halo density</option>
+          </select>
+        </label>
+        <label class="row check"><input type="checkbox" id="arrows" /> Velocity arrows</label>
+        <label class="row check"><input type="checkbox" id="contours" /> Halo contours (r = ¼, ½, 1, 2 r<sub>s</sub>)</label>
+      </section>
+
+      <section>
+        <h2>Dark matter</h2>
+        <label class="row check big"><input type="checkbox" id="darkMatter" /> Dark-matter halo <kbd>D</kbd></label>
+        <p class="hint">Toggle it <b>while running</b>: the disk keeps its speed but loses the halo's pull and flies apart.
+          Press <b>Reset</b> with the halo off to build a galaxy that never had one.</p>
+        <label class="row">Profile
+          <select id="haloProfile">
+            <option value="nfw">NFW (cuspy)</option>
+            <option value="iso">Pseudo-isothermal (cored)</option>
+          </select>
+        </label>
+        <div class="sliders" data-group="halo"></div>
+      </section>
+
+      <section>
+        <h2>Baryons <span class="tag">restart on change</span></h2>
+        <div class="sliders" data-group="baryons"></div>
+        <h2 class="sub">Bulge <span class="tag">live</span></h2>
+        <div class="sliders" data-group="bulge"></div>
+      </section>
+
+      <section>
+        <h2>Bar / spiral driving <span class="tag">live</span></h2>
+        <label class="row">Rotating potential
+          <select id="forcing">
+            <option value="none">None (self-gravity only)</option>
+            <option value="spiral">2-armed spiral density wave</option>
+            <option value="bar">Rotating bar</option>
+          </select>
+        </label>
+        <div class="sliders" data-group="forcing"></div>
+      </section>
+
+      <section>
+        <h2>Numerics</h2>
+        <label class="row">Grid
+          <select id="n">
+            <option value="128">128 × 128 (fast)</option>
+            <option value="192">192 × 192</option>
+            <option value="256">256 × 256</option>
+            <option value="384">384 × 384 (slow)</option>
+          </select>
+        </label>
+        <label class="row">Speed limit
+          <select id="speed">
+            <option value="5">5 Myr/s</option>
+            <option value="10">10 Myr/s</option>
+            <option value="25">25 Myr/s</option>
+            <option value="50">50 Myr/s</option>
+            <option value="0">as fast as possible</option>
+          </select>
+        </label>
+        <div class="sliders" data-group="numerics"></div>
+      </section>
+
+      <section>
+        <h2>Diagnostics</h2>
+        <dl id="diag"></dl>
+      </section>
+
+      <details id="about">
+        <summary>The physics</summary>
+        <p>Stars and gas are treated as two <b>continuous fluids</b> in the galactic plane (face-on view),
+          each with surface density Σ(x, t) and velocity <b>v</b>(x, t). They obey the compressible
+          <b>Euler equations</b>:</p>
+        <div class="eq">∂Σ/∂t + ∇·(Σ<b>v</b>) = 0</div>
+        <div class="eq">∂<b>v</b>/∂t + (<b>v</b>·∇)<b>v</b> = −∇P/Σ − ∇Φ</div>
+        <p>The pressure P = K Σ<sup>γ</sup> stands in for the random motions of stars (velocity dispersion σ,
+          P ≈ Σσ²) and for gas pressure (isothermal, c<sub>s</sub> ≈ 10 km/s).</p>
+        <p>Gravity comes from the <b>Poisson equation</b> with all the mass:</p>
+        <div class="eq">∇²Φ = 4πG (ρ<sub>stars</sub> + ρ<sub>gas</sub> + ρ<sub>bulge</sub> + ρ<sub>DM</sub>)</div>
+        <p>The disk's own part is solved with FFTs on the grid (a thin sheet with softening ε ≈ disk thickness);
+          the bulge and the <b>dark-matter halo</b> are fixed spherical potentials:</p>
+        <div class="eq">NFW: ρ = ρ<sub>s</sub> / [(r/r<sub>s</sub>)(1 + r/r<sub>s</sub>)²]</div>
+        <div class="eq">cored: ρ = ρ<sub>0</sub> / [1 + (r/r<sub>c</sub>)²]</div>
+        <p><b>Why flat rotation curves imply dark matter.</b> A circular orbit needs
+          v<sub>c</sub>² = G M(&lt;R)/R. Starlight is concentrated in the inner few kpc, so beyond it the
+          visible mass predicts a Keplerian fall-off v<sub>c</sub> ∝ R<sup>−½</sup> (orange curve).
+          Real galaxies instead show flat curves out to tens of kpc, so M(&lt;R) must keep growing ∝ R:
+          an unseen halo with ρ ∝ r<sup>−2</sup> (violet). Switch the halo off and watch the fluid
+          rotation (dots) and the total curve (white) drop.</p>
+        <p><b>Spiral arms.</b> A disk's stability is set by Toomre's
+          Q = c κ / (π G Σ) (κ = epicyclic frequency). For Q ≲ 1.5 self-gravity
+          swing-amplifies perturbations into trailing arms; for Q &lt; 1 the disk fragments; hot disks (Q ≳ 2)
+          stay smooth like S0 galaxies. A rotating bar or spiral potential drives a grand-design pattern;
+          the gas responds most strongly and shocks along the arms.</p>
+        <p>"Normal" galaxies here are <b>ellipticals</b> (pressure-supported, little rotation) and
+          <b>lenticulars</b> (hot rotating disks without arms).</p>
+        <p>Shortcuts: <kbd>Space</kbd> pause, <kbd>S</kbd> step, <kbd>R</kbd> reset, <kbd>D</kbd> dark matter,
+          <kbd>V</kbd> next view, <kbd>A</kbd> arrows, <kbd>H</kbd> hide panel.</p>
+      </details>
+    </aside>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
